@@ -2,7 +2,7 @@ use actix_web::{web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::process::Command;
-use std::io::Result;
+
 
 #[derive(Debug, Serialize, Deserialize)]
 struct MyData {
@@ -70,7 +70,7 @@ async fn get_data() -> HttpResponse {
     }
 }
 
-async fn put_data(new_data: web::Json<MyData>) -> HttpResponse {
+async fn put_data(_new_data: web::Json<MyData>) -> HttpResponse {
     // You can put your original put_data logic here
     // ...
 
