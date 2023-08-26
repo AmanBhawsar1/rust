@@ -1,66 +1,40 @@
-use actix_web::{web, App, HttpResponse, HttpServer};
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::process::Command;
 
+#[derive(Debug, Serialize, Deserialize, Clone)] // Add the Clone trait
+struct Employee {
+    userId: String,
+    jobTitleName: String,
+    firstName: String,
+    lastName: String,
+    preferredFullName: String,
+    employeeCode: String,
+    region: String,
+    phoneNumber: String,
+    emailAddress: String,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
-struct MyData {
-    // Define your data structure here, similar to the JSON in data.json
-    // For example:
-    // field1: String,
-    // field2: i32,
+struct MyDataWrapper {
+    Employees: Vec<Employee>,
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Start Actix Web server
-    let server = HttpServer::new(|| {
+    HttpServer::new(|| {
         App::new()
             .route("/data", web::get().to(get_data))
             .route("/data", web::put().to(put_data))
+            .route("/data", web::post().to(post_data))
+            .route("/data", web::delete().to(delete_data))
     })
     .bind("127.0.0.1:8000")?
-    .run();
-
-    // Run the server asynchronously
-    let server_result = server.await;
-
-    // Handle server result
-    match server_result {
-        Ok(_) => println!("Server has started."),
-        Err(err) => eprintln!("Server error: {:?}", err),
-    }
-
-    // Perform a GET request using curl
-    let get_output = Command::new("curl")
-        .arg("http://127.0.0.1:8000/data")
-        .output()?;
-    
-    // Print the response from the GET request
-    println!("GET Response:\n{}", String::from_utf8_lossy(&get_output.stdout));
-
-    // Define the JSON data for the PUT request
-    let json_data = r#"{"field1": "new_value", "field2": 42}"#;
-
-    // Perform a PUT request using curl
-    let put_output = Command::new("curl")
-        .arg("-X")
-        .arg("PUT")
-        .arg("-H")
-        .arg("Content-Type: application/json")
-        .arg("-d")
-        .arg(json_data)
-        .arg("http://127.0.0.1:8000/data")
-        .output()?;
-    
-    // Print the response from the PUT request
-    println!("PUT Response:\n{}", String::from_utf8_lossy(&put_output.stdout));
-
-    Ok(())
+    .run()
+    .await
 }
 
-async fn get_data() -> HttpResponse {
+async fn get_data() -> impl Responder {
     if let Ok(content) = fs::read_to_string("/home/aman/Downloads/data.json") {
         HttpResponse::Ok()
             .content_type("application/json")
@@ -70,30 +44,51 @@ async fn get_data() -> HttpResponse {
     }
 }
 
-async fn put_data(_new_data: web::Json<MyData>) -> HttpResponse {
-    // You can put your original put_data logic here
-    // ...
+async fn put_data(data: web::Json<MyDataWrapper>) -> impl Responder {
+    let mut existing_data = load_existing_data();
+    
+    for updated_employee in &data.Employees {
+        if let Some(index) = existing_data.iter().position(|e| e.userId == updated_employee.userId) {
+            existing_data[index] = updated_employee.clone();
+        }
+    }
+    
+    save_data(&existing_data);
 
-    HttpResponse::NoContent().into()
+    HttpResponse::Ok().body("Data updated successfully")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use actix_web::http::{StatusCode};
-    use actix_web::{test, App};
+async fn post_data(data: web::Json<MyDataWrapper>) -> impl Responder {
+    let mut existing_data = load_existing_data();
+    existing_data.extend(data.Employees.iter().cloned());
+    save_data(&existing_data);
 
-    #[actix_web::test]
-    async fn test_get_data() {
-        let app = App::new().route("/data", web::get().to(get_data));
-        let mut app = test::init_service(app).await;
+    HttpResponse::Created().body("Data added successfully")
+}
 
-        let req = test::TestRequest::get().uri("/data").to_request();
-        let resp = test::call_service(&mut app, req).await;
+async fn delete_data(data: web::Json<MyDataWrapper>) -> impl Responder {
+    let mut existing_data = load_existing_data();
+    existing_data.retain(|item| !data.Employees.iter().any(|employee| employee.userId == item.userId));
+    save_data(&existing_data);
 
-        assert_eq!(resp.status(), StatusCode::OK);
-        // Add more assertions as needed
+    HttpResponse::Ok().body("Data deleted successfully")
+}
+
+fn load_existing_data() -> Vec<Employee> {
+    if let Ok(content) = fs::read_to_string("/home/aman/Downloads/data.json") {
+        serde_json::from_str::<MyDataWrapper>(&content)
+            .map(|wrapper| wrapper.Employees)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
     }
+}
 
-    // Add more test cases as needed
+fn save_data(data: &[Employee]) {
+    let wrapper = MyDataWrapper { Employees: data.to_vec() };
+    if let Ok(updated_content) = serde_json::to_string(&wrapper) {
+        if let Err(err) = fs::write("/home/aman/Downloads/data.json", updated_content) {
+            println!("Error saving data: {}", err);
+        }
+    }
 }
