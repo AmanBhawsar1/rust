@@ -1,4 +1,4 @@
-pip3 install streamlite
+pip3 install streamlit
 
 
 
